@@ -105,8 +105,8 @@ def save_to_db(index_code, kline_data):
 
 def run_batch_job():
     fetcher = StockDataFetcher()
-    index_codes = ['HK.800000']  # 添加您需要的指数代码
-    end_date = '2023-10-29'
+    index_codes = ['HK.800000','HK.800700']  # 添加您需要的指数代码
+    end_date = '2024-10-29'
     start_date = '2022-01-01'
 
     for index_code in index_codes:
