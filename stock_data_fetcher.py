@@ -89,6 +89,15 @@ def init_db():
     cur.close()
     conn.close()
 
+def get_latest_date(index_code):
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor()
+    cur.execute("SELECT MAX(date) FROM kline_data WHERE index_code = %s", (index_code,))
+    latest_date = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return latest_date
+
 def save_to_db(index_code, kline_data):
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
@@ -106,11 +115,16 @@ def save_to_db(index_code, kline_data):
 def run_batch_job():
     fetcher = StockDataFetcher()
     index_codes = ['HK.800000','HK.800700']  # 添加您需要的指数代码
-    end_date = '2024-10-29'
-    start_date = '2022-01-01'
+    end_date = datetime.datetime.now().strftime('%Y-%m-%d')
 
     for index_code in index_codes:
         print(f"正在获取 {index_code} 的数据...")
+        latest_date = get_latest_date(index_code)
+        if latest_date:
+            start_date = (latest_date + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+        else:
+            start_date = '2024-01-01'  # 如果没有数据，使用默认的开始日期
+
         kline_data = fetcher.get_klines_for_index(index_code, start_date, end_date)
         save_to_db(index_code, kline_data)
         print(f"{index_code} 数据已保存到数据库")
