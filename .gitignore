@@ -1,1 +1,28 @@
-__pycache__
+# 虚拟环境
+futu_env/
+venv/
+env/
+.env/
+.venv/
+ENV/
+*_env/
+
+# Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 其他常见 Python 相关文件
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
