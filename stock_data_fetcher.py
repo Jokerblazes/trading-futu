@@ -92,6 +92,9 @@ def init_db():
     cur.execute('''CREATE TABLE IF NOT EXISTS breadth_data
                    (index_code TEXT, date DATE, breadth_value NUMERIC,
                     PRIMARY KEY (index_code, date))''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS net_high_low_data
+                   (index_code TEXT, date DATE, net_high_low_value NUMERIC,
+                    PRIMARY KEY (index_code, date))''')
     conn.commit()
     cur.close()
     conn.close()
@@ -210,9 +213,7 @@ def get_kline_data_for_breadth(index_code):
     return {'index': index_data, 'constituents': constituents_data}
 
 
-def calculate_and_save_breadth(index_code):
-    # 从数据库中获取K线数据
-    kline_data = get_kline_data_for_breadth(index_code)
+def calculate_and_save_breadth(index_code, kline_data):
     
     # 计算市场广度
     breadth_data = calculate_50_day_breadth(kline_data)
@@ -231,6 +232,75 @@ def calculate_and_save_breadth(index_code):
     cur.close()
     conn.close()
 
+def calculate_net_high_low(data):
+    index_data = data['index']
+    constituents_data = data['constituents']
+    high_low_data = calculate_52_week_high_low(constituents_data)
+
+    net_high_low = []
+    for point in index_data:
+        date = point['time_key']  # 直接使用时间键
+
+        daily_data = high_low_data.get(date, [])
+
+        high_count = sum(1 for stock_point in daily_data if stock_point['isNewHigh'])
+        low_count = sum(1 for stock_point in daily_data if stock_point['isNewLow'])
+
+        net_high_low.append({
+            'time': date,  # 直接使用时间键
+            'value': high_count - low_count,
+        })
+
+    return net_high_low
+
+def calculate_and_save_net_high_low(index_code, kline_data):
+    # 计算净高低值
+    net_high_low_data = calculate_net_high_low(kline_data)
+    
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor()
+    for record in net_high_low_data:
+        date = record['time']
+        net_high_low_value = record['value']
+        cur.execute('''INSERT INTO net_high_low_data (index_code, date, net_high_low_value)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (index_code, date) DO UPDATE
+                       SET net_high_low_value = EXCLUDED.net_high_low_value''',
+                    (index_code, date, net_high_low_value))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def calculate_52_week_high_low(stock_data):
+    period = 52 * 5  # 假设每周5个交易日
+    high_low_data = {}
+
+    for symbol, daily_data in stock_data.items():
+        date_map = {entry['time_key']: entry for entry in daily_data}
+
+        dates = sorted(date_map.keys())  # 获取并排序日期
+
+        for i, date in enumerate(dates):
+            start = max(0, i - period + 1)
+            end = i + 1
+            period_dates = dates[start:end]
+            period_data = [date_map[d] for d in period_dates]
+            high_52_week = max(d['high'] for d in period_data)
+            low_52_week = min(d['low'] for d in period_data)
+
+            if date not in high_low_data:
+                high_low_data[date] = []
+
+            high_low_data[date].append({
+                'symbol': symbol,
+                **date_map[date],
+                'high52Week': high_52_week,
+                'low52Week': low_52_week,
+                'isNewHigh': date_map[date]['high'] == high_52_week,
+                'isNewLow': date_map[date]['low'] == low_52_week,
+            })
+
+    return high_low_data
 def run_batch_job():
     fetcher = StockDataFetcher()
     index_codes = ['HK.800000', 'HK.800700']  # 添加您需要的指数代码
@@ -251,9 +321,11 @@ def run_batch_job():
         # 计算并保存移动平均值
         for stock_code in kline_data['constituents'].keys():
             calculate_and_save_moving_averages(index_code, stock_code)
-
+        # 从数据库中获取K线数据
+        kline_data = get_kline_data_for_breadth(index_code)
         # 计算并保存市场广度
-        calculate_and_save_breadth(index_code)
+        calculate_and_save_breadth(index_code, kline_data)
+        calculate_and_save_net_high_low(index_code, kline_data)
 
     fetcher.close()
 
