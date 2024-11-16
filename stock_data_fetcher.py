@@ -2,7 +2,7 @@
 
 from futu import *
 import psycopg2
-from psycopg2.extras import Json
+from psycopg2.extras import Json, RealDictCursor
 import datetime
 import time
 
@@ -89,6 +89,9 @@ def init_db():
                    (index_code TEXT, stock_code TEXT, date DATE,
                     ma_5 NUMERIC, ma_10 NUMERIC, ma_20 NUMERIC, ma_50 NUMERIC, ma_200 NUMERIC,
                     PRIMARY KEY (index_code, stock_code, date))''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS breadth_data
+                   (index_code TEXT, date DATE, breadth_value NUMERIC,
+                    PRIMARY KEY (index_code, date))''')
     conn.commit()
     cur.close()
     conn.close()
@@ -126,6 +129,33 @@ def calculate_moving_average(data, period):
         moving_average.append({'date': data[i]['time_key'], 'value': sum_values / period})
     return moving_average
 
+def calculate_50_day_breadth(data):
+    index_data = data['index']
+    constituents_data = data['constituents']
+    
+    breadth_data = []
+    for index, point in enumerate(index_data):
+        previous_close = index_data[index - 1]['close'] if index > 0 else point['close']
+        is_index_up = point['close'] > previous_close
+        print(f'index: {index}, point: {point}, previous_close: {previous_close}, is_index_up: {is_index_up}')
+        
+        count = 0
+        for stock_data in constituents_data.values():
+            if index < len(stock_data) and stock_data[index] is not None:
+                ma_50 = calculate_moving_average(stock_data, 50)
+                if index < len(ma_50) and ma_50[index]['value'] is not None:
+                    if (is_index_up and stock_data[index]['close'] > ma_50[index]['value']) or \
+                       (not is_index_up and stock_data[index]['close'] < ma_50[index]['value']):
+                        count += 1
+
+        proportion = count / len(constituents_data) if len(constituents_data) > 0 else 0
+        breadth_data.append({
+            'time': point['time_key'],  # 直接使用 time_key
+            'value': proportion if is_index_up else -proportion,
+        })
+    
+    return breadth_data
+
 def get_kline_data_from_db(index_code, stock_code):
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
@@ -157,6 +187,50 @@ def calculate_and_save_moving_averages(index_code, stock_code):
     cur.close()
     conn.close()
 
+def get_kline_data_for_breadth(index_code):
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # 获取指数数据
+    cur.execute("SELECT data FROM kline_data WHERE index_code = %s AND stock_code = %s ORDER BY date", (index_code, index_code))
+    index_data = [record['data'] for record in cur.fetchall()]
+    
+    # 获取成分股数据
+    cur.execute("SELECT DISTINCT stock_code FROM kline_data WHERE index_code = %s", (index_code,))
+    stock_codes = [row['stock_code'] for row in cur.fetchall() if row['stock_code'] != index_code]
+    
+    constituents_data = {}
+    for stock_code in stock_codes:
+        cur.execute("SELECT data FROM kline_data WHERE index_code = %s AND stock_code = %s ORDER BY date", (index_code, stock_code))
+        constituents_data[stock_code] = [record['data'] for record in cur.fetchall()]
+    
+    cur.close()
+    conn.close()
+    
+    return {'index': index_data, 'constituents': constituents_data}
+
+
+def calculate_and_save_breadth(index_code):
+    # 从数据库中获取K线数据
+    kline_data = get_kline_data_for_breadth(index_code)
+    
+    # 计算市场广度
+    breadth_data = calculate_50_day_breadth(kline_data)
+    
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor()
+    for record in breadth_data:
+        date = record['time']
+        breadth_value = record['value']
+        cur.execute('''INSERT INTO breadth_data (index_code, date, breadth_value)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (index_code, date) DO UPDATE
+                       SET breadth_value = EXCLUDED.breadth_value''',
+                    (index_code, date, breadth_value))
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def run_batch_job():
     fetcher = StockDataFetcher()
     index_codes = ['HK.800000', 'HK.800700']  # 添加您需要的指数代码
@@ -177,6 +251,9 @@ def run_batch_job():
         # 计算并保存移动平均值
         for stock_code in kline_data['constituents'].keys():
             calculate_and_save_moving_averages(index_code, stock_code)
+
+        # 计算并保存市场广度
+        calculate_and_save_breadth(index_code)
 
     fetcher.close()
 
