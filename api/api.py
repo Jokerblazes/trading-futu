@@ -26,13 +26,37 @@ def get_from_db(index_code, start_date, end_date):
     
     result = {'index': [], 'constituents': {}}
     for stock_code in stock_codes:
+        # 获取K线数据
         cur.execute("SELECT data FROM kline_data WHERE index_code = %s AND stock_code = %s AND date BETWEEN %s AND %s ORDER BY date",
                     (index_code, stock_code, start_date, end_date))
-        data = [row['data'] for row in cur.fetchall()]
+        kline_data = [row['data'] for row in cur.fetchall()]
+
+        # 获取移动平均值数据
+        cur.execute('''SELECT date, ma_5, ma_10, ma_20, ma_50, ma_200 
+                       FROM moving_average_data 
+                       WHERE index_code = %s AND stock_code = %s AND date BETWEEN %s AND %s ORDER BY date''',
+                    (index_code, stock_code, start_date, end_date))
+        ma_data = cur.fetchall()
+
+        # 合并K线数据和移动平均值数据
+        combined_data = []
+        ma_dict = {row['date'].strftime('%Y-%m-%d'): row for row in ma_data}  # 将日期转换为字符串格式
+        for record in kline_data:
+            date = record['time_key'].split(' ')[0]  # 提取日期部分
+            if date in ma_dict:
+                record['ma'] = {
+                    'ma_5': ma_dict[date]['ma_5'],
+                    'ma_10': ma_dict[date]['ma_10'],
+                    'ma_20': ma_dict[date]['ma_20'],
+                    'ma_50': ma_dict[date]['ma_50'],
+                    'ma_200': ma_dict[date]['ma_200']
+                }
+            combined_data.append(record)
+
         if stock_code == index_code:
-            result['index'] = data
+            result['index'] = combined_data
         else:
-            result['constituents'][stock_code] = data
+            result['constituents'][stock_code] = combined_data
     
     cur.close()
     conn.close()
