@@ -24,7 +24,7 @@ def get_from_db(index_code, start_date, end_date):
     cur.execute("SELECT DISTINCT stock_code FROM kline_data WHERE index_code = %s", (index_code,))
     stock_codes = [row['stock_code'] for row in cur.fetchall()]
     
-    result = {'index': [], 'constituents': {}}
+    result = {'index': [], 'constituents': {}, 'breadth': []}
     for stock_code in stock_codes:
         # 获取K线数据
         cur.execute("SELECT data FROM kline_data WHERE index_code = %s AND stock_code = %s AND date BETWEEN %s AND %s ORDER BY date",
@@ -43,6 +43,7 @@ def get_from_db(index_code, start_date, end_date):
         ma_dict = {row['date'].strftime('%Y-%m-%d'): row for row in ma_data}  # 将日期转换为字符串格式
         for record in kline_data:
             date = record['time_key'].split(' ')[0]  # 提取日期部分
+            record['time_key'] = date  # 确保时间格式一致
             if date in ma_dict:
                 record['ma'] = {
                     'ma_5': ma_dict[date]['ma_5'],
@@ -57,6 +58,14 @@ def get_from_db(index_code, start_date, end_date):
             result['index'] = combined_data
         else:
             result['constituents'][stock_code] = combined_data
+
+    # 获取市场广度数据
+    cur.execute('''SELECT date, breadth_value 
+                   FROM breadth_data 
+                   WHERE index_code = %s AND date BETWEEN %s AND %s ORDER BY date''',
+                (index_code, start_date, end_date))
+    breadth_data = cur.fetchall()
+    result['breadth'] = [{'date': row['date'].strftime('%Y-%m-%d'), 'value': row['breadth_value']} for row in breadth_data]
     
     cur.close()
     conn.close()
