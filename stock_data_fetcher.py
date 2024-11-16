@@ -126,10 +126,21 @@ def calculate_moving_average(data, period):
         moving_average.append({'date': data[i]['time_key'], 'value': sum_values / period})
     return moving_average
 
-def calculate_and_save_moving_averages(index_code, stock_code, data):
+def get_kline_data_from_db(index_code, stock_code):
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor()
+    cur.execute("SELECT data FROM kline_data WHERE index_code = %s AND stock_code = %s ORDER BY date", (index_code, stock_code))
+    data = [record[0] for record in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return data
+
+def calculate_and_save_moving_averages(index_code, stock_code):
+    # 从数据库中获取K线数据
+    data = get_kline_data_from_db(index_code, stock_code)
+    
     periods = [5, 10, 20, 50, 200]
     moving_averages = {f'ma_{p}': calculate_moving_average(data, p) for p in periods}
-
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
     for i, record in enumerate(data):
@@ -164,8 +175,8 @@ def run_batch_job():
         print(f"{index_code} 数据已保存到数据库")
 
         # 计算并保存移动平均值
-        for stock_code, data in kline_data['constituents'].items():
-            calculate_and_save_moving_averages(index_code, stock_code, data)
+        for stock_code in kline_data['constituents'].keys():
+            calculate_and_save_moving_averages(index_code, stock_code)
 
     fetcher.close()
 
