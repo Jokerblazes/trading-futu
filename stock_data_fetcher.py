@@ -85,6 +85,10 @@ def init_db():
     cur.execute('''CREATE TABLE IF NOT EXISTS kline_data
                    (index_code TEXT, stock_code TEXT, date DATE, data JSONB,
                     PRIMARY KEY (index_code, stock_code, date))''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS moving_average_data
+                   (index_code TEXT, stock_code TEXT, date DATE,
+                    ma_5 NUMERIC, ma_10 NUMERIC, ma_20 NUMERIC, ma_50 NUMERIC, ma_200 NUMERIC,
+                    PRIMARY KEY (index_code, stock_code, date))''')
     conn.commit()
     cur.close()
     conn.close()
@@ -112,9 +116,39 @@ def save_to_db(index_code, kline_data):
     cur.close()
     conn.close()
 
+def calculate_moving_average(data, period):
+    moving_average = []
+    for i in range(len(data)):
+        if i < period - 1:
+            moving_average.append({'date': data[i]['time_key'], 'value': None})
+            continue
+        sum_values = sum(item['close'] for item in data[i - period + 1:i + 1])
+        moving_average.append({'date': data[i]['time_key'], 'value': sum_values / period})
+    return moving_average
+
+def calculate_and_save_moving_averages(index_code, stock_code, data):
+    periods = [5, 10, 20, 50, 200]
+    moving_averages = {f'ma_{p}': calculate_moving_average(data, p) for p in periods}
+
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor()
+    for i, record in enumerate(data):
+        date = record['time_key']
+        ma_values = {f'ma_{p}': moving_averages[f'ma_{p}'][i]['value'] for p in periods}
+        cur.execute('''INSERT INTO moving_average_data (index_code, stock_code, date, ma_5, ma_10, ma_20, ma_50, ma_200)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (index_code, stock_code, date) DO UPDATE
+                       SET ma_5 = EXCLUDED.ma_5, ma_10 = EXCLUDED.ma_10, ma_20 = EXCLUDED.ma_20,
+                           ma_50 = EXCLUDED.ma_50, ma_200 = EXCLUDED.ma_200''',
+                    (index_code, stock_code, date, ma_values['ma_5'], ma_values['ma_10'],
+                     ma_values['ma_20'], ma_values['ma_50'], ma_values['ma_200']))
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def run_batch_job():
     fetcher = StockDataFetcher()
-    index_codes = ['HK.800000','HK.800700']  # 添加您需要的指数代码
+    index_codes = ['HK.800000', 'HK.800700']  # 添加您需要的指数代码
     end_date = datetime.datetime.now().strftime('%Y-%m-%d')
 
     for index_code in index_codes:
@@ -128,6 +162,10 @@ def run_batch_job():
         kline_data = fetcher.get_klines_for_index(index_code, start_date, end_date)
         save_to_db(index_code, kline_data)
         print(f"{index_code} 数据已保存到数据库")
+
+        # 计算并保存移动平均值
+        for stock_code, data in kline_data['constituents'].items():
+            calculate_and_save_moving_averages(index_code, stock_code, data)
 
     fetcher.close()
 
