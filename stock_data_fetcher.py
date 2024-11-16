@@ -319,8 +319,7 @@ def run_batch_job():
         print(f"{index_code} 数据已保存到数据库")
 
         # 计算并保存移动平均值
-        for stock_code in kline_data['constituents'].keys():
-            calculate_and_save_moving_averages(index_code, stock_code)
+        calculate_and_save_moving_averages(index_code, index_code);
         # 从数据库中获取K线数据
         kline_data = get_kline_data_for_breadth(index_code)
         # 计算并保存市场广度
