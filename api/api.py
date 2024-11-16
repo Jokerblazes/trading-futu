@@ -24,7 +24,7 @@ def get_from_db(index_code, start_date, end_date):
     cur.execute("SELECT DISTINCT stock_code FROM kline_data WHERE index_code = %s", (index_code,))
     stock_codes = [row['stock_code'] for row in cur.fetchall()]
     
-    result = {'index': [], 'constituents': {}, 'breadth': []}
+    result = {'index': [], 'constituents': {}, 'breadth': [], 'net_high_low': []}
     for stock_code in stock_codes:
         # 获取K线数据
         cur.execute("SELECT data FROM kline_data WHERE index_code = %s AND stock_code = %s AND date BETWEEN %s AND %s ORDER BY date",
@@ -66,6 +66,14 @@ def get_from_db(index_code, start_date, end_date):
                 (index_code, start_date, end_date))
     breadth_data = cur.fetchall()
     result['breadth'] = [{'date': row['date'].strftime('%Y-%m-%d'), 'value': row['breadth_value']} for row in breadth_data]
+
+    # 获取净高低值数据
+    cur.execute('''SELECT date, net_high_low_value 
+                   FROM net_high_low_data 
+                   WHERE index_code = %s AND date BETWEEN %s AND %s ORDER BY date''',
+                (index_code, start_date, end_date))
+    net_high_low_data = cur.fetchall()
+    result['net_high_low'] = [{'date': row['date'].strftime('%Y-%m-%d'), 'value': row['net_high_low_value']} for row in net_high_low_data]
     
     cur.close()
     conn.close()
