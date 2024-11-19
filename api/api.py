@@ -9,10 +9,11 @@ import os
 
 app = Flask(__name__)
 CORS(app)
+DEFAULT_DB_URL = "postgresql://postgres:mysecretpassword@localhost:5432/postgres"
 
 
 def get_from_db(index_code, start_date, end_date):
-    database_url = os.environ.get('POSTGRES_URL')
+    database_url = os.environ.get('POSTGRES_URL', DEFAULT_DB_URL)
     conn = psycopg2.connect(database_url)
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
