@@ -5,8 +5,8 @@ from psycopg2.extras import RealDictCursor
 DEFAULT_DB_URL = "postgresql://postgres:mysecretpassword@localhost:5432/postgres"
 
 class IndexKlineService:
-    def __init__(self):
-        self.database_url = os.environ.get('POSTGRES_URL', DEFAULT_DB_URL)
+    def __init__(self, database_url):
+        self.database_url = database_url
 
     def get_from_db(self, index_code, start_date, end_date):
         conn = psycopg2.connect(self.database_url)
