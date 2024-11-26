@@ -5,16 +5,14 @@ import psycopg2
 from psycopg2.extras import Json, RealDictCursor
 import datetime
 import time
-from dotenv import load_dotenv
-import os
-load_dotenv()
+
 # PostgreSQL连接参数
 DB_PARAMS = {
-    'dbname': os.environ.get('POSTGRES_DB', 'postgres'),
-    'user': os.environ.get('POSTGRES_USER', 'postgres'),
-    'password': os.environ.get('POSTGRES_PASSWORD', 'mysecretpassword'),
-    'host': os.environ.get('POSTGRES_HOST', 'localhost'),
-    'port': os.environ.get('POSTGRES_PORT', '5432')
+    'dbname': 'postgres',
+    'user': 'postgres',
+    'password': 'mysecretpassword',
+    'host': 'localhost',
+    'port': '5432'
 }
 
 class StockDataFetcher:
@@ -170,28 +168,24 @@ def get_kline_data_from_db(index_code, stock_code):
     conn.close()
     return data
 
-def calculate_and_save_moving_averages(index_code, stock_code, start_date, end_date):
-    # 获取全量数据用于计算
+def calculate_and_save_moving_averages(index_code, stock_code):
+    # 从数据库中获取K线数据
     data = get_kline_data_from_db(index_code, stock_code)
     
     periods = [5, 10, 20, 50, 200]
     moving_averages = {f'ma_{p}': calculate_moving_average(data, p) for p in periods}
-    
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
-    
     for i, record in enumerate(data):
         date = record['time_key']
-        # 只保存指定日期范围内的数据
-        if start_date <= date <= end_date:
-            ma_values = {f'ma_{p}': moving_averages[f'ma_{p}'][i]['value'] for p in periods}
-            cur.execute('''INSERT INTO moving_average_data (index_code, stock_code, date, ma_5, ma_10, ma_20, ma_50, ma_200)
-                          VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                          ON CONFLICT (index_code, stock_code, date) DO UPDATE
-                          SET ma_5 = EXCLUDED.ma_5, ma_10 = EXCLUDED.ma_10, ma_20 = EXCLUDED.ma_20,
-                              ma_50 = EXCLUDED.ma_50, ma_200 = EXCLUDED.ma_200''',
-                       (index_code, stock_code, date, ma_values['ma_5'], ma_values['ma_10'],
-                        ma_values['ma_20'], ma_values['ma_50'], ma_values['ma_200']))
+        ma_values = {f'ma_{p}': moving_averages[f'ma_{p}'][i]['value'] for p in periods}
+        cur.execute('''INSERT INTO moving_average_data (index_code, stock_code, date, ma_5, ma_10, ma_20, ma_50, ma_200)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (index_code, stock_code, date) DO UPDATE
+                       SET ma_5 = EXCLUDED.ma_5, ma_10 = EXCLUDED.ma_10, ma_20 = EXCLUDED.ma_20,
+                           ma_50 = EXCLUDED.ma_50, ma_200 = EXCLUDED.ma_200''',
+                    (index_code, stock_code, date, ma_values['ma_5'], ma_values['ma_10'],
+                     ma_values['ma_20'], ma_values['ma_50'], ma_values['ma_200']))
     conn.commit()
     cur.close()
     conn.close()
@@ -218,22 +212,22 @@ def get_kline_data_for_breadth(index_code):
     
     return {'index': index_data, 'constituents': constituents_data}
 
-def calculate_and_save_breadth(index_code, kline_data, start_date, end_date):
-    # 使用全量数据计算
+
+def calculate_and_save_breadth(index_code, kline_data):
+    
+    # 计算市场广度
     breadth_data = calculate_50_day_breadth(kline_data)
     
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
     for record in breadth_data:
         date = record['time']
-        # 只保存指定日期范围内的数据
-        if start_date <= date <= end_date:
-            breadth_value = record['value']
-            cur.execute('''INSERT INTO breadth_data (index_code, date, breadth_value)
-                          VALUES (%s, %s, %s)
-                          ON CONFLICT (index_code, date) DO UPDATE
-                          SET breadth_value = EXCLUDED.breadth_value''',
-                       (index_code, date, breadth_value))
+        breadth_value = record['value']
+        cur.execute('''INSERT INTO breadth_data (index_code, date, breadth_value)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (index_code, date) DO UPDATE
+                       SET breadth_value = EXCLUDED.breadth_value''',
+                    (index_code, date, breadth_value))
     conn.commit()
     cur.close()
     conn.close()
@@ -259,22 +253,20 @@ def calculate_net_high_low(data):
 
     return net_high_low
 
-def calculate_and_save_net_high_low(index_code, kline_data, start_date, end_date):
-    # 使用全量数据计算
+def calculate_and_save_net_high_low(index_code, kline_data):
+    # 计算净高低值
     net_high_low_data = calculate_net_high_low(kline_data)
     
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
     for record in net_high_low_data:
         date = record['time']
-        # 只保存指定日期范围内的数据
-        if start_date <= date <= end_date:
-            net_high_low_value = record['value']
-            cur.execute('''INSERT INTO net_high_low_data (index_code, date, net_high_low_value)
-                          VALUES (%s, %s, %s)
-                          ON CONFLICT (index_code, date) DO UPDATE
-                          SET net_high_low_value = EXCLUDED.net_high_low_value''',
-                       (index_code, date, net_high_low_value))
+        net_high_low_value = record['value']
+        cur.execute('''INSERT INTO net_high_low_data (index_code, date, net_high_low_value)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (index_code, date) DO UPDATE
+                       SET net_high_low_value = EXCLUDED.net_high_low_value''',
+                    (index_code, date, net_high_low_value))
     conn.commit()
     cur.close()
     conn.close()
@@ -311,7 +303,7 @@ def calculate_52_week_high_low(stock_data):
     return high_low_data
 def run_batch_job():
     fetcher = StockDataFetcher()
-    index_codes = ['HK.800000', 'HK.800700']
+    index_codes = ['HK.800000', 'HK.800700']  # 添加您需要的指数代码
     end_date = datetime.datetime.now().strftime('%Y-%m-%d')
 
     for index_code in index_codes:
@@ -320,17 +312,19 @@ def run_batch_job():
         if latest_date:
             start_date = (latest_date + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
         else:
-            start_date = '2024-01-01'
+            start_date = '2024-01-01'  # 如果没有数据，使用默认的开始日期
 
         kline_data = fetcher.get_klines_for_index(index_code, start_date, end_date)
         save_to_db(index_code, kline_data)
         print(f"{index_code} 数据已保存到数据库")
 
-        # 计算并保存指定日期范围的数据
-        calculate_and_save_moving_averages(index_code, index_code, start_date, end_date)
+        # 计算并保存移动平均值
+        calculate_and_save_moving_averages(index_code, index_code);
+        # 从数据库中获取K线数据
         kline_data = get_kline_data_for_breadth(index_code)
-        calculate_and_save_breadth(index_code, kline_data, start_date, end_date)
-        calculate_and_save_net_high_low(index_code, kline_data, start_date, end_date)
+        # 计算并保存市场广度
+        calculate_and_save_breadth(index_code, kline_data)
+        calculate_and_save_net_high_low(index_code, kline_data)
 
     fetcher.close()
 
