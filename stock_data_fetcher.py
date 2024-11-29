@@ -142,7 +142,7 @@ def calculate_50_day_breadth(data):
     for index, point in enumerate(index_data):
         previous_close = index_data[index - 1]['close'] if index > 0 else point['close']
         is_index_up = point['close'] > previous_close
-        print(f'index: {index}, point: {point}, previous_close: {previous_close}, is_index_up: {is_index_up}')
+        
         
         count = 0
         for stock_data in constituents_data.values():
@@ -171,17 +171,23 @@ def get_kline_data_from_db(index_code, stock_code):
     return data
 
 def calculate_and_save_moving_averages(index_code, stock_code, start_date, end_date):
+    from datetime import datetime
+
+    # 将 start_date 和 end_date 转换为 datetime 对象
+    start_date = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date = datetime.strptime(end_date, "%Y-%m-%d")
+
     # 获取全量数据用于计算
     data = get_kline_data_from_db(index_code, stock_code)
-    
     periods = [5, 10, 20, 50, 200]
     moving_averages = {f'ma_{p}': calculate_moving_average(data, p) for p in periods}
     
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
-    
     for i, record in enumerate(data):
-        date = record['time_key']
+        # 将 record['time_key'] 转换为 datetime 对象
+        date = datetime.strptime(record['time_key'], "%Y-%m-%d %H:%M:%S")
+        
         # 只保存指定日期范围内的数据
         if start_date <= date <= end_date:
             ma_values = {f'ma_{p}': moving_averages[f'ma_{p}'][i]['value'] for p in periods}
@@ -219,13 +225,21 @@ def get_kline_data_for_breadth(index_code):
     return {'index': index_data, 'constituents': constituents_data}
 
 def calculate_and_save_breadth(index_code, kline_data, start_date, end_date):
+    from datetime import datetime
+
+    # 将 start_date 和 end_date 转换为 datetime 对象
+    start_date = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date = datetime.strptime(end_date, "%Y-%m-%d")
+
     # 使用全量数据计算
     breadth_data = calculate_50_day_breadth(kline_data)
     
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
     for record in breadth_data:
-        date = record['time']
+        # 将 record['time'] 转换为 datetime 对象
+        date = datetime.strptime(record['time'], "%Y-%m-%d %H:%M:%S")
+        
         # 只保存指定日期范围内的数据
         if start_date <= date <= end_date:
             breadth_value = record['value']
@@ -260,13 +274,21 @@ def calculate_net_high_low(data):
     return net_high_low
 
 def calculate_and_save_net_high_low(index_code, kline_data, start_date, end_date):
+    from datetime import datetime
+
+    # 将 start_date 和 end_date 转换为 datetime 对象
+    start_date = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date = datetime.strptime(end_date, "%Y-%m-%d")
+
     # 使用全量数据计算
     net_high_low_data = calculate_net_high_low(kline_data)
     
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
     for record in net_high_low_data:
-        date = record['time']
+        # 将 record['time'] 转换为 datetime 对象
+        date = datetime.strptime(record['time'], "%Y-%m-%d %H:%M:%S")
+        
         # 只保存指定日期范围内的数据
         if start_date <= date <= end_date:
             net_high_low_value = record['value']
