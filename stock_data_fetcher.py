@@ -9,13 +9,7 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 # PostgreSQL连接参数
-DB_PARAMS = {
-    'dbname': os.environ.get('POSTGRES_DB', 'postgres'),
-    'user': os.environ.get('POSTGRES_USER', 'postgres'),
-    'password': os.environ.get('POSTGRES_PASSWORD', 'mysecretpassword'),
-    'host': os.environ.get('POSTGRES_HOST', 'localhost'),
-    'port': os.environ.get('POSTGRES_PORT', '5432')
-}
+DB_PARAMS = os.environ.get('POSTGRES_URL', "postgresql://postgres:mysecretpassword@localhost:5432/postgres")
 
 class StockDataFetcher:
     def __init__(self, host='127.0.0.1', port=11111):
@@ -82,7 +76,7 @@ class StockDataFetcher:
         self.quote_ctx.close()
 
 def init_db():
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor()
     cur.execute('''CREATE TABLE IF NOT EXISTS kline_data
                    (index_code TEXT, stock_code TEXT, date DATE, data JSONB,
@@ -102,7 +96,7 @@ def init_db():
     conn.close()
 
 def get_latest_date(index_code):
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor()
     cur.execute("SELECT MAX(date) FROM kline_data WHERE index_code = %s", (index_code,))
     latest_date = cur.fetchone()[0]
@@ -111,7 +105,7 @@ def get_latest_date(index_code):
     return latest_date
 
 def save_to_db(index_code, kline_data):
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor()
     for stock_code, data in kline_data['constituents'].items():
         for record in data:
@@ -162,7 +156,7 @@ def calculate_50_day_breadth(data):
     return breadth_data
 
 def get_kline_data_from_db(index_code, stock_code):
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor()
     cur.execute("SELECT data FROM kline_data WHERE index_code = %s AND stock_code = %s ORDER BY date", (index_code, stock_code))
     data = [record[0] for record in cur.fetchall()]
@@ -182,7 +176,7 @@ def calculate_and_save_moving_averages(index_code, stock_code, start_date, end_d
     periods = [5, 10, 20, 50, 200]
     moving_averages = {f'ma_{p}': calculate_moving_average(data, p) for p in periods}
     
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor()
     for i, record in enumerate(data):
         # 将 record['time_key'] 转换为 datetime 对象
@@ -203,7 +197,7 @@ def calculate_and_save_moving_averages(index_code, stock_code, start_date, end_d
     conn.close()
 
 def get_kline_data_for_breadth(index_code):
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
     # 获取指数数据
@@ -234,7 +228,7 @@ def calculate_and_save_breadth(index_code, kline_data, start_date, end_date):
     # 使用全量数据计算
     breadth_data = calculate_50_day_breadth(kline_data)
     
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor()
     for record in breadth_data:
         # 将 record['time'] 转换为 datetime 对象
@@ -283,7 +277,7 @@ def calculate_and_save_net_high_low(index_code, kline_data, start_date, end_date
     # 使用全量数据计算
     net_high_low_data = calculate_net_high_low(kline_data)
     
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor()
     for record in net_high_low_data:
         # 将 record['time'] 转换为 datetime 对象
@@ -357,7 +351,7 @@ def run_batch_job():
     fetcher.close()
 
 if __name__ == '__main__':
-    init_db()
+    # init_db()
     while True:
         run_batch_job()
         print("批处理任务完成，等待下一次运行...")
