@@ -225,23 +225,47 @@ def calculate_and_save_breadth(index_code, kline_data, start_date, end_date):
     start_date = datetime.strptime(start_date, "%Y-%m-%d")
     end_date = datetime.strptime(end_date, "%Y-%m-%d")
 
-    # 使用全量数据计算
-    breadth_data = calculate_50_day_breadth(kline_data)
-    
     conn = psycopg2.connect(DB_PARAMS)
     cur = conn.cursor()
-    for record in breadth_data:
-        # 将 record['time'] 转换为 datetime 对象
-        date = datetime.strptime(record['time'], "%Y-%m-%d %H:%M:%S")
-        
-        # 只保存指定日期范围内的数据
-        if start_date <= date <= end_date:
-            breadth_value = record['value']
-            cur.execute('''INSERT INTO breadth_data (index_code, date, breadth_value)
-                          VALUES (%s, %s, %s)
-                          ON CONFLICT (index_code, date) DO UPDATE
-                          SET breadth_value = EXCLUDED.breadth_value''',
-                       (index_code, date, breadth_value))
+
+    # 计算每只股票的 ma_50 并保存状态
+    for stock_code, data in kline_data['constituents'].items():
+        ma_50 = calculate_moving_average(data, 50)
+        for i, record in enumerate(data):
+            date = datetime.strptime(record['time_key'], "%Y-%m-%d %H:%M:%S")
+            if start_date <= date <= end_date:
+                # 检查 ma_50[i]['value'] 是否为 None
+                if ma_50[i]['value'] is not None:
+                    above_ma_50 = record['close'] > ma_50[i]['value']
+                else:
+                    above_ma_50 = False  # 或者根据业务逻辑设定为 None
+
+                cur.execute('''INSERT INTO stock_ma_status (index_code, stock_code, date, above_ma_50)
+                              VALUES (%s, %s, %s, %s)
+                              ON CONFLICT (index_code, stock_code, date) DO UPDATE
+                              SET above_ma_50 = EXCLUDED.above_ma_50''',
+                           (index_code, stock_code, date, above_ma_50))
+
+    # 计算 breadth_data 基于 stock_ma_status
+    cur.execute('''SELECT date, COUNT(*) FILTER (WHERE above_ma_50) AS above_count, COUNT(*) AS total_count
+                   FROM stock_ma_status
+                   WHERE index_code = %s AND date BETWEEN %s AND %s
+                   GROUP BY date''', (index_code, start_date, end_date))
+
+    breadth_data = []
+    for record in cur.fetchall():
+        date, above_count, total_count = record
+        breadth_value = above_count / total_count if total_count > 0 else 0
+        breadth_data.append((index_code, date, breadth_value))
+
+    # 保存 breadth_data
+    for index_code, date, breadth_value in breadth_data:
+        cur.execute('''INSERT INTO breadth_data (index_code, date, breadth_value)
+                      VALUES (%s, %s, %s)
+                      ON CONFLICT (index_code, date) DO UPDATE
+                      SET breadth_value = EXCLUDED.breadth_value''',
+                   (index_code, date, breadth_value))
+
     conn.commit()
     cur.close()
     conn.close()
